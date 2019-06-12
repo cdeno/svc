@@ -1,0 +1,180 @@
+service: cdeno
+
+plugins:
+  - serverless-offline
+
+provider:
+  name: aws
+  runtime: nodejs8.10
+  stage: dev
+  region: eu-west-2
+  iamRoleStatements:
+    - Effect: Allow
+      Action:
+        - dynamodb:Query
+        - dynamodb:Scan
+        - dynamodb:GetItem
+        - dynamodb:PutItem
+        - dynamodb:UpdateItem
+        - dynamodb:DeleteItem
+        - sqs:SendMessage
+        - sqs:ReceiveMessage
+        - sqs:DeleteMessage
+        - sqs:GetQueueAttributes
+      Resource:
+        - { "Fn::GetAtt": ["ModulesTable", "Arn" ] }
+        - { "Fn::GetAtt": ["VersionsTable", "Arn" ] }
+        - { "Fn::GetAtt": ["DownloadSyncQueue", "Arn" ] }
+
+layers:
+  awscli:
+    package:
+      artifact: layers/awscli.zip
+    description:  layer
+    compatibleRuntimes:
+      - nodejs8.10
+      - python2.7
+    licenseInfo: GPLv3 # optional, a string specifying license information
+    allowedAccounts: # optional, a list of AWS account IDs allowed to access this layer.
+      - '*'
+
+functions:
+  module_find:
+    handler: module.find
+    events:
+      - http:
+          path: module
+          method: get
+          cors: true
+
+  module_get:
+    handler: module.get
+    events:
+      - http:
+          path: module/{username}/{reponame}
+          method: get
+          cors: true
+
+  module_get_by_user:
+    handler: module.getByUser
+    events:
+      - http:
+          path: module/{username}
+          method: get
+          cors: true
+
+  version_get:
+    handler: version.get
+    events:
+      - http:
+          path: version/{username}/{reponame}
+          method: get
+          cors: true
+
+  webhook_post:
+    handler: webhook.post
+    events:
+      - http:
+          path: webhook
+          method: post
+
+  register_post:
+    handler: register.post
+    events:
+      - http:
+          path: register
+          method: post
+  
+  download-sync:
+    handler: download-sync.handler
+    timeout: 300
+    events:
+      - sqs:
+          arn:
+            Fn::GetAtt:
+              - DownloadSyncQueue
+              - Arn
+          batchSize: 1
+    layers:
+      - {Ref: AwscliLambdaLayer}
+
+resources:
+  Resources:
+    S3Modules:
+      Type: AWS::S3::Bucket
+      Properties:
+        AccessControl: PublicRead
+        BucketName: cdeno
+        CorsConfiguration:
+          CorsRules:
+            - AllowedHeaders:
+                - "*"
+              AllowedMethods:
+                - HEAD
+                - GET
+                - PUT
+                - POST
+              AllowedOrigins:
+                - "*"
+
+    S3ModulesBucketPolicy:
+        Type: AWS::S3::BucketPolicy
+        Properties:
+          Bucket: !Ref S3Modules
+          PolicyDocument:
+            Id: S3ModulesBucketPolicyId
+            Version: "2012-10-17"
+            Statement:
+              - Sid: S3ModulesBucketPolicyStmt
+                Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:PutObjectAcl
+                  - s3:ListBucket
+                  - s3:DeleteObject
+                  - s3:GetObject
+                Principal: "*"
+                Resource:
+                  - arn:aws:s3:::cdeno
+                  - arn:aws:s3:::cdeno/*
+
+    ModulesTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: modules
+        AttributeDefinitions:
+          - AttributeName: username
+            AttributeType: S
+          - AttributeName: ID
+            AttributeType: S
+        KeySchema:
+          - AttributeName: username
+            KeyType: HASH
+          - AttributeName: ID
+            KeyType: RANGE
+        ProvisionedThroughput:
+          ReadCapacityUnits: 5
+          WriteCapacityUnits: 5
+
+    VersionsTable:
+      Type: AWS::DynamoDB::Table
+      Properties:
+        TableName: versions
+        AttributeDefinitions:
+          - AttributeName: moduleId
+            AttributeType: S
+          - AttributeName: ID
+            AttributeType: S
+        KeySchema:
+          - AttributeName: moduleId
+            KeyType: HASH
+          - AttributeName: ID
+            KeyType: RANGE
+        ProvisionedThroughput:
+          ReadCapacityUnits: 5
+          WriteCapacityUnits: 5
+
+    DownloadSyncQueue:
+      Type: AWS::SQS::Queue
+      Properties:
+        VisibilityTimeout: 300

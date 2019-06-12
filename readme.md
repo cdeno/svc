@@ -1,0 +1,19 @@
+![Sequence diagram](./diagram.svg)
+
+Title: CDENO
+githubuser->github:Creates repo release
+github->cdeno api:POST /webhook
+cdeno api->cdeno lambda:invoke "webhook"
+Note right of cdeno lambda: Add module/version db
+cdeno lambda->cdeno queue: Put message on\ndownload/sync queue
+cdeno api-->github:200 OK
+cdeno queue-->cdeno lambda:invoke download/sync
+cdeno lambda->github: download release.zip
+github->cdeno lambda: release.zip
+cdeno lambda->cdeno lambda: Extract zip
+cdeno lambda-->cdeno s3: sync extract dir to s3
+Note right of cdeno lambda: Update db\nversion status
+
+
+https://bramp.github.io/js-sequence-diagrams/
+
