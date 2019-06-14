@@ -39,7 +39,7 @@ async function createModuleVersion (username, reponame, fullname, userId,
     moduleItem.description = { S: moduleDescription }
   }
 
-  // Put ddb entry
+  // Put ddb module entry if it doesn't already exist
   let moduleResult
   try {
     moduleResult = await ddb.putItem({
@@ -73,7 +73,7 @@ async function createModuleVersion (username, reponame, fullname, userId,
 
   // if (changesetUrl) item.changesetUrl = { S: changesetUrl }
 
-  // Save new version item
+  // Save new version item - will throw if the module/version exists already
   const versionResult = await ddb.putItem({
     TableName: 'versions',
     Item: versionItem,
@@ -84,6 +84,7 @@ async function createModuleVersion (username, reponame, fullname, userId,
     }
   }).promise()
 
+  // Pop message onto the queue to download & sync the repo
   const queueResult = await sqs.sendMessage({
     MessageBody: event.body,
     QueueUrl: config.queueUrl,

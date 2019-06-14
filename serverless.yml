@@ -1,13 +1,19 @@
 service: cdeno
 
 plugins:
-  - serverless-offline
+  - serverless-offline # For local lambda/api debugging
+
+custom:
+  bucket: ${opt:bucket, 'cdeno'}-${self:provider.stage}
 
 provider:
   name: aws
   runtime: nodejs8.10
-  stage: dev
-  region: eu-west-2
+  stage: ${opt:stage, 'dev'}
+  region: ${opt:region, 'eu-west-2'}
+  environment:
+    QUEUE_URL: !Ref DownloadSyncQueue
+    BUCKET_NAME: ${self:custom.bucket}
   iamRoleStatements:
     - Effect: Allow
       Action:
@@ -39,6 +45,9 @@ layers:
       - '*'
 
 functions:
+  #
+  # functions for website api
+  #
   module_find:
     handler: module.find
     events:
@@ -70,7 +79,12 @@ functions:
           path: version/{username}/{reponame}
           method: get
           cors: true
+  
+  #
+  # functions for modules
+  #
 
+  # Github webhook - should be setup against releases
   webhook_post:
     handler: webhook.post
     events:
@@ -78,6 +92,7 @@ functions:
           path: webhook
           method: post
 
+  # For manually registering a module POST (url, description)
   register_post:
     handler: register.post
     events:
@@ -85,7 +100,9 @@ functions:
           path: register
           method: post
   
-  download-sync:
+  # Waits for messages on the queue, downloads
+  # the zip and syncs the files to the s3 bucket
+  download_sync:
     handler: download-sync.handler
     timeout: 300
     events:
@@ -104,7 +121,7 @@ resources:
       Type: AWS::S3::Bucket
       Properties:
         AccessControl: PublicRead
-        BucketName: cdeno
+        BucketName: ${self:custom.bucket}
         CorsConfiguration:
           CorsRules:
             - AllowedHeaders:
@@ -135,8 +152,8 @@ resources:
                   - s3:GetObject
                 Principal: "*"
                 Resource:
-                  - arn:aws:s3:::cdeno
-                  - arn:aws:s3:::cdeno/*
+                  - arn:aws:s3:::${self:custom.bucket}
+                  - arn:aws:s3:::${self:custom.bucket}/*
 
     ModulesTable:
       Type: AWS::DynamoDB::Table
