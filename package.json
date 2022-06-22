@@ -8,7 +8,7 @@
     "serverless-offline": "^4.2.0"
   },
   "devDependencies": {
-    "got": "^9.6.0",
+    "got": "^11.8.5",
     "standard": "^12.0.1"
   },
   "scripts": {
